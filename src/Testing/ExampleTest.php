@@ -1,6 +1,6 @@
 <?php
 
-namespace DreamFactory\Core\Database\Testing;
+namespace DreamFactory\Core\Scheduler\Testing;
 
 use DreamFactory\Core\Enums\Verbs;
 use DreamFactory\Core\Testing\TestCase;
@@ -18,7 +18,7 @@ class ExampleTest extends TestCase
 
     public function tearDown()
     {
-        Service::whereName('test-skeleton')->delete();
+        Service::whereName('test-scheduler')->delete();
 
         parent::tearDown();
     }

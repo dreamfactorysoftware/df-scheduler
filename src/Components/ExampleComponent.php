@@ -1,6 +1,6 @@
 <?php
 
-namespace DreamFactory\Core\Skeleton\Components;
+namespace DreamFactory\Core\Scheduler\Components;
 
 
 class ExampleComponent

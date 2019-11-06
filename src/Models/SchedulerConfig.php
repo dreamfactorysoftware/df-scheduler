@@ -1,51 +1,41 @@
 <?php
 
-namespace DreamFactory\Core\Skeleton\Models;
+namespace DreamFactory\Core\Scheduler\Models;
 
 use DreamFactory\Core\Models\BaseServiceConfigModel;
 use Illuminate\Support\Arr;
 
 /**
- * Write your model
- *
- * Write your methods, properties or override ones from the parent
- *
+ * Scheduled jobs
  */
-class ExampleConfig extends BaseServiceConfigModel
+class SchedulerConfig extends BaseSystemModel
 {
     /** @var string */
-    protected $table = 'db_example';
+    protected $table = 'scheduler_config';
 
-    /** @var array */
-    protected $fillable = [
-        'service_id',
-        'label',
-        'description',
-        'is_example'
+
+    protected $rules = [
+        'component' => 'required'
     ];
 
-    /** @var array */
+    protected $guarded = ['id'];
+
     protected $casts = [
-        'service_id' => 'integer',
-        'is_example' => 'boolean'
+        'id' => 'integer',
+        'is_active' => 'boolean',
+        'verb_mask'      => 'integer',
+        'service_id'     => 'integer'
     ];
-
-    /**
-     * The attributes excluded from the model's JSON form.
-     *
-     * @var array
-     */
-    protected $hidden = ['created_date'];
 
     /**
      * @param array $schema
      */
-    protected static function prepareConfigSchemaField(array &$schema)
+    /*protected static function prepareConfigSchemaField(array &$schema)
     {
         parent::prepareConfigSchemaField($schema);
 
         switch ($schema['name']) {
-            case 'label':
+            case 'service_id':
                 $schema['label'] = 'Simple label';
                 $schema['type'] = 'text';
                 $schema['required'] = false;
@@ -65,7 +55,7 @@ class ExampleConfig extends BaseServiceConfigModel
                     'It must be an example';
                 break;
         }
-    }
+    }*/
 
 
 }

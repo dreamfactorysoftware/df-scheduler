@@ -1,11 +1,11 @@
 {
-  "name":        "dreamfactory/df-skeleton",
-  "description": "DreamFactory(tm) Skeleton Code",
+  "name":        "dreamfactory/df-scheduler",
+  "description": "DreamFactory(tm) Scheduler Code",
   "homepage":    "https://www.dreamfactory.com/",
   "keywords":    [
     "dreamfactory",
-    "skeleton",
-    "connector"
+    "schedule",
+    "scheduler"
   ],
   "license":     [
     "Apache-2.0"
@@ -13,27 +13,27 @@
   "authors":     [
     {
       "name":  "Yaroslav Mokhurenko",
-      "email": "yaroslavm@softwareplanet.com"
+      "email": "yaroslavm@softwareplanet.uk.com"
     }
   ],
   "support":     {
     "email":  "dspsupport@dreamfactory.com",
-    "source": "https://github.com/dreamfactorysoftware/df-skeleton",
-    "issues": "https://github.com/dreamfactorysoftware/df-skeleton/issues",
+    "source": "https://github.com/dreamfactorysoftware/df-scheduler",
+    "issues": "https://github.com/dreamfactorysoftware/df-scheduler/issues",
     "wiki":   "https://wiki.dreamfactory.com"
   },
   "minimum-stability": "dev",
   "prefer-stable": true,
   "require":     {
-    "dreamfactory/df-core":   "~0.15.3",
-    "dreamfactory/df-system": "~0.2.2"
+    "dreamfactory/df-core":   "~0.16.1",
+    "dreamfactory/df-system": "~0.3.0"
   },
   "require-dev": {
     "phpunit/phpunit": "@stable"
   },
   "autoload":    {
     "psr-4": {
-      "DreamFactory\\Core\\Skeleton\\": "src/"
+      "DreamFactory\\Core\\Scheduler\\": "src/"
     }
   },
   "extra":       {
@@ -42,7 +42,7 @@
     },
     "laravel": {
       "providers": [
-        "DreamFactory\\Core\\Skeleton\\ServiceProvider"
+        "DreamFactory\\Core\\Scheduler\\ServiceProvider"
       ]
     }
   }
