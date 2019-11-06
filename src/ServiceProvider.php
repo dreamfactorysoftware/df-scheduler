@@ -17,11 +17,6 @@ class ServiceProvider extends \Illuminate\Support\ServiceProvider
     {
         // add migrations
         $this->loadMigrationsFrom(__DIR__ . '/../database/migrations');
-
-        // Add cron job
-        $projectPath = path();
-        dd($projectPath);
-        $cron = "* * * * * cd /path-to-your-project && php artisan schedule:run >> /dev/null 2>&1";
     }
 
     public function register()
