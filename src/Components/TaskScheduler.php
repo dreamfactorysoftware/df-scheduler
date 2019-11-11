@@ -1,0 +1,34 @@
+<?php
+
+namespace DreamFactory\Core\Scheduler\Components;
+
+use DreamFactory\Core\Enums\VerbsMask;
+use DreamFactory\Core\Scheduler\Models\SchedulerTask;
+use Illuminate\Console\Scheduling\Schedule;
+
+class TaskScheduler
+{
+    /**
+     * Schedule a task
+     *
+     * @param SchedulerTask $task
+     * @throws \DreamFactory\Core\Exceptions\NotImplementedException
+     */
+    public static function schedule(SchedulerTask $task)
+    {
+        $data = json_encode($task->content);
+        $verb = VerbsMask::toString($task->verb_mask);
+        $serviceName = \ServiceManager::getServiceById($task->service_id)->getName();
+        $component = $task->component;
+        $data = json_encode($data);
+        $commandOptions = '--verb=' . $verb . ' --service=' . $serviceName . ' --resource=' . $component;
+
+        // Use the scheduler to schedule the task at its desired frequency in minutes
+        app(Schedule::class)
+            ->command('df:request ' . $data . ' ' . $commandOptions)
+            ->cron('*/' . $task->frequency . ' * * * *')
+            ->appendOutputTo(storage_path() . '/failed-scheduled-tasks.log')
+            ->onFailure(function () use ($task) {
+            });
+    }
+}
