@@ -2,6 +2,7 @@
 
 namespace DreamFactory\Core\Scheduler\Models;
 
+use DreamFactory\Core\Enums\VerbsMask;
 use DreamFactory\Core\Models\BaseSystemModel;
 
 /**
@@ -33,4 +34,22 @@ class SchedulerTask extends BaseSystemModel
         'verb_mask'      => 'integer',
         'service_id'     => 'integer'
     ];
+
+    /**
+     * The accessors to append to the model's array form.
+     *
+     * @var array
+     */
+    protected $appends = ['verb'];
+
+    /**
+     * Get verb.
+     *
+     * @return bool
+     * @throws \DreamFactory\Core\Exceptions\NotImplementedException
+     */
+    public function getVerbAttribute()
+    {
+        return VerbsMask::toString($this->attributes['verb_mask']);
+    }
 }

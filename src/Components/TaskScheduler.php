@@ -24,11 +24,13 @@ class TaskScheduler
         $commandOptions = '--verb=' . $verb . ' --service=' . $serviceName . ' --resource=' . $component;
 
         // Use the scheduler to schedule the task at its desired frequency in minutes
-        app(Schedule::class)
-            ->command('df:request ' . $data . ' ' . $commandOptions)
-            ->cron('*/' . $task->frequency . ' * * * *')
-            ->appendOutputTo(storage_path() . '/failed-scheduled-tasks.log')
-            ->onFailure(function () use ($task) {
-            });
+        if ($task->is_active) {
+            app(Schedule::class)
+                ->command('df:request ' . $data . ' ' . $commandOptions)
+                ->cron('*/' . $task->frequency . ' * * * *')
+                ->appendOutputTo(storage_path() . '/failed-scheduled-tasks.log')
+                ->onFailure(function () use ($task) {
+                });
+        }
     }
 }
