@@ -16,11 +16,14 @@ class TaskScheduler
      */
     public static function schedule(SchedulerTask $task)
     {
-        $data = json_encode($task->content);
+        if (empty($task->content)) {
+            $data = "";
+        } else {
+            $data = json_encode($task->content);
+        }
         $verb = VerbsMask::toString($task->verb_mask);
         $serviceName = \ServiceManager::getServiceById($task->service_id)->getName();
         $component = $task->component;
-        $data = json_encode($data);
         $commandOptions = '--verb=' . $verb . ' --service=' . $serviceName . ' --resource=' . $component;
 
         // Use the scheduler to schedule the task at its desired frequency in minutes
@@ -28,6 +31,7 @@ class TaskScheduler
             app(Schedule::class)
                 ->command('df:request ' . $data . ' ' . $commandOptions)
                 ->cron('*/' . $task->frequency . ' * * * *')
+                ->withoutOverlapping()
                 ->appendOutputTo(storage_path() . '/failed-scheduled-tasks.log')
                 ->onFailure(function () use ($task) {
                 });

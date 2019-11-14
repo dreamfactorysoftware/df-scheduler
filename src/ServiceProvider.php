@@ -52,6 +52,11 @@ class ServiceProvider extends \Illuminate\Support\ServiceProvider
         });
     }
 
+    /**
+     * Trigger task scheduling
+     *
+     * @throws \DreamFactory\Core\Exceptions\NotImplementedException
+     */
     public function scheduleTasks()
     {
         $tasks = SchedulerTask::all();
