@@ -8,6 +8,7 @@ use DreamFactory\Core\Enums\LicenseLevel;
 use DreamFactory\Core\Scheduler\Resources\System\SchedulerResource;
 use DreamFactory\Core\System\Components\SystemResourceManager;
 use DreamFactory\Core\System\Components\SystemResourceType;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 
 class ServiceProvider extends \Illuminate\Support\ServiceProvider
@@ -59,11 +60,12 @@ class ServiceProvider extends \Illuminate\Support\ServiceProvider
      */
     public function scheduleTasks()
     {
-        $tasks = SchedulerTask::all();
+        if (Schema::hasTable(with(new SchedulerTask)->getTable())) {
+            $tasks = SchedulerTask::all();
 
-        foreach ($tasks as $task)
-        {
-            TaskScheduler::schedule($task);
+            foreach ($tasks as $task) {
+                TaskScheduler::schedule($task);
+            }
         }
     }
 }
