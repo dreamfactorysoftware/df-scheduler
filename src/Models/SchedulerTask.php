@@ -21,6 +21,7 @@ class SchedulerTask extends BaseSystemModel
         'component',
         'verb_mask',
         'frequency',
+        'payload'
     ];
 
     protected $required = [

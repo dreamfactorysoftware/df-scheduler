@@ -2,6 +2,7 @@
 
 namespace DreamFactory\Core\Scheduler;
 
+use DreamFactory\Core\Scheduler\Commands\ScheduleListCommand;
 use DreamFactory\Core\Scheduler\Components\TaskScheduler;
 use DreamFactory\Core\Scheduler\Models\SchedulerTask;
 use DreamFactory\Core\Enums\LicenseLevel;
@@ -23,13 +24,15 @@ class ServiceProvider extends \Illuminate\Support\ServiceProvider
         $cron = "* * * * * cd " . $projectPath . " && php artisan schedule:run >> /dev/null 2>&1";
         $output = shell_exec('crontab -l');
         if (!Str::contains($output, $cron)) {
-            file_put_contents($projectPath . 'crontab.txt', $output . $cron . PHP_EOL);
+            file_put_contents(storage_path() . '/crontab.txt', $output . $cron . PHP_EOL);
             exec('crontab ' . $projectPath . 'crontab.txt');
         }
 
-
 //        todo: check cron service status in middleware $output = shell_exec('service cron status');
 
+        $this->commands([
+            ScheduleListCommand::class,
+        ]);
 
         $this->app->booted(function () {
             $this->scheduleTasks();
