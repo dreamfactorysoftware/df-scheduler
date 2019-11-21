@@ -25,7 +25,7 @@ class ServiceProvider extends \Illuminate\Support\ServiceProvider
         $output = shell_exec('crontab -l');
         if (!Str::contains($output, $cron)) {
             file_put_contents(storage_path() . '/crontab.txt', $output . $cron . PHP_EOL);
-            exec('crontab ' . $projectPath . 'crontab.txt');
+            exec('crontab ' . storage_path() . '/crontab.txt');
         }
 
 //        todo: check cron service status in middleware $output = shell_exec('service cron status');
