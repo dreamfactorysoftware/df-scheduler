@@ -9,6 +9,7 @@ use DreamFactory\Core\Enums\LicenseLevel;
 use DreamFactory\Core\Scheduler\Resources\System\SchedulerResource;
 use DreamFactory\Core\System\Components\SystemResourceManager;
 use DreamFactory\Core\System\Components\SystemResourceType;
+use Log;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 
@@ -22,10 +23,16 @@ class ServiceProvider extends \Illuminate\Support\ServiceProvider
         // Add cron job
         $projectPath = base_path() . '/';
         $cron = "* * * * * cd " . $projectPath . " && php artisan schedule:run >> /dev/null 2>&1";
-        $output = shell_exec('crontab -l');
-        if (!Str::contains($output, $cron)) {
-            file_put_contents(storage_path() . '/crontab.txt', $output . $cron . PHP_EOL);
-            exec('crontab ' . storage_path() . '/crontab.txt');
+        try {
+            $output = shell_exec('crontab -l');
+
+            if (!Str::contains($output, $cron)) {
+                file_put_contents(storage_path() . '/crontab.txt', $output . ' ' . $cron . PHP_EOL);
+                exec('crontab ' . storage_path() . '/crontab.txt');
+            }
+
+        } catch (\Exception $e) {
+            Log::error($e->getMessage());
         }
 
 //        todo: check cron service status in middleware $output = shell_exec('service cron status');
