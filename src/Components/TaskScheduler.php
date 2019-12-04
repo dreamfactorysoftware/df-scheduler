@@ -19,46 +19,53 @@ class TaskScheduler
     public static function schedule(SchedulerTask $task)
     {
         if (empty($task->payload)) {
-            $data = "";
+            $data = '';
         } else {
             $data = json_encode(json_decode($task->payload));
         }
+
         $verb = VerbsMask::toString($task->verb_mask);
         $serviceName = \ServiceManager::getServiceById($task->service_id)->getName();
         $component = $task->component;
         $commandOptions = '--format=JSON --verb=' . $verb . ' --service=' . $serviceName . ' --resource=' . $component;
 
         // Use the scheduler to schedule the task at its desired frequency in minutes
-        $failedTaskLogFile = stream_get_meta_data(tmpfile())['uri'];
         if ($task->is_active) {
+            $logFile = self::createTaskLogFile();
+            $logFilePath = stream_get_meta_data($logFile)['uri'];
             app(Schedule::class)
                 ->command('df:request \'' . $data . '\' ' . $commandOptions)
                 ->cron('*/' . $task->frequency . ' * * * *')
                 ->withoutOverlapping()
-                ->sendOutputTo($failedTaskLogFile)
-                ->onFailure(function () use ($task, $failedTaskLogFile) {
+                ->sendOutputTo($logFilePath)
+                ->onFailure(function () use ($task, $logFilePath) {
                     try {
                         $taskId = $task->id;
-                        $errorContent = file_exists($failedTaskLogFile) ? file_get_contents($failedTaskLogFile) : '';
-                        $statusCode = self::getStatusCode($failedTaskLogFile);
-                        $taskLog = new TaskLog(["task_id" => $taskId, "status_code" => $statusCode, "content" => $errorContent]);
+                        $errorContent = file_exists($logFilePath) ? file_get_contents($logFilePath) : '';
+                        $statusCode = self::getStatusCode($logFilePath);
+                        $taskLog = new TaskLog(['task_id' => $taskId, 'status_code' => $statusCode, 'content' => $errorContent]);
 
                         if (!TaskLog::whereTaskId($taskId)->exists()) {
                             $taskLog->save();
                         } else {
                             $taskLog = TaskLog::whereTaskId($taskId)->first();
-                            $isSameContent = Str::before($taskLog->content, "\n") === Str::before($errorContent, "\n");
-                            if ($taskLog->task_id === $taskId && $taskLog->status_code === $statusCode && $isSameContent) {
+                            $isSameError = Str::before($taskLog->content, "\n") === Str::before($errorContent, "\n");
+                            if ($taskLog->task_id === $taskId && $taskLog->status_code === $statusCode && $isSameError) {
+                                unlink($logFilePath);
                                 return;
                             }
                             $taskLog->status_code = $statusCode;
                             $taskLog->content = $errorContent;
                             $taskLog->save();
                         }
+                        unlink($logFilePath);
                     } catch (\Exception $e) {
                         \Log::error('Could not store failed scheduler task log: ' . $e->getMessage());
                     }
                 });
+
+            // close and remove log file after scheduling
+            fclose($logFile);
         }
     }
 
@@ -77,5 +84,15 @@ class TaskScheduler
             }
         }
         return '500';
+    }
+
+    /**
+     * @param $fileName
+     * @return array
+     */
+    private static function createTaskLogFile()
+    {
+        $file = tmpfile();
+        return $file;
     }
 }
