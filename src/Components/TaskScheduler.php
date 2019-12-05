@@ -31,8 +31,17 @@ class TaskScheduler
 
         // Use the scheduler to schedule the task at its desired frequency in minutes
         if ($task->is_active) {
-            $logFile = self::createTaskLogFile();
-            $logFilePath = stream_get_meta_data($logFile)['uri'];
+
+            $dirPath = storage_path() . DIRECTORY_SEPARATOR . 'logs' . DIRECTORY_SEPARATOR . 'tmp';
+
+            if (!file_exists($dirPath)) mkdir($dirPath, 0777, true);
+
+            if ($logFile = self::createTaskLogFile($dirPath)) {
+                $logFilePath = stream_get_meta_data($logFile)['uri'];
+            } else {
+                $logFilePath = $dirPath . DIRECTORY_SEPARATOR . uniqid('schedule', true) . '.log';;
+            }
+
             app(Schedule::class)
                 ->command('df:request \'' . $data . '\' ' . $commandOptions)
                 ->cron('*/' . $task->frequency . ' * * * *')
@@ -51,21 +60,21 @@ class TaskScheduler
                             $taskLog = TaskLog::whereTaskId($taskId)->first();
                             $isSameError = Str::before($taskLog->content, "\n") === Str::before($errorContent, "\n");
                             if ($taskLog->task_id === $taskId && $taskLog->status_code === $statusCode && $isSameError) {
-                                unlink($logFilePath);
+                                if (file_exists($logFilePath)) unlink($logFilePath);
                                 return;
                             }
                             $taskLog->status_code = $statusCode;
                             $taskLog->content = $errorContent;
                             $taskLog->save();
                         }
-                        unlink($logFilePath);
+                        if (file_exists($logFilePath)) unlink($logFilePath);
                     } catch (\Exception $e) {
                         \Log::error('Could not store failed scheduler task log: ' . $e->getMessage());
                     }
                 });
 
             // close and remove log file after scheduling
-            fclose($logFile);
+            if (file_exists($logFilePath)) fclose($logFile);
         }
     }
 
@@ -87,12 +96,12 @@ class TaskScheduler
     }
 
     /**
-     * @param $fileName
+     * @param $dirPath
      * @return array
      */
-    private static function createTaskLogFile()
+    private static function createTaskLogFile($dirPath)
     {
-        $file = tmpfile();
-        return $file;
+        putenv('TMPDIR='.$dirPath);
+        return tmpfile();
     }
 }
