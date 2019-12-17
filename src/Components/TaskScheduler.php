@@ -43,7 +43,7 @@ class TaskScheduler
                     if (TaskLog::whereTaskId($task->id)->exists()) {
                         TaskLog::whereTaskId($task->id)->first()->delete();
                     }
-                    if (file_exists($logFilePath)) unlink($logFilePath);
+                    self::deleteTaskLogFile($logFilePath);
                 })
                 ->onFailure(function () use ($task, $logFilePath) {
                     try {
