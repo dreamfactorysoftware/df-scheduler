@@ -32,15 +32,7 @@ class TaskScheduler
         // Use the scheduler to schedule the task at its desired frequency in minutes
         if ($task->is_active) {
 
-            $dirPath = storage_path() . DIRECTORY_SEPARATOR . 'logs' . DIRECTORY_SEPARATOR . 'tmp';
-
-            if (!file_exists($dirPath)) mkdir($dirPath, 0777, true);
-
-            if ($logFile = self::createTaskLogFile($dirPath)) {
-                $logFilePath = stream_get_meta_data($logFile)['uri'];
-            } else {
-                $logFilePath = $dirPath . DIRECTORY_SEPARATOR . uniqid('schedule', true) . '.log';;
-            }
+            $logFilePath = self::createTaskLogFile();
 
             app(Schedule::class)
                 ->command('df:request \'' . $data . '\' ' . $commandOptions)
@@ -55,42 +47,41 @@ class TaskScheduler
                 })
                 ->onFailure(function () use ($task, $logFilePath) {
                     try {
-                        $taskId = $task->id;
-                        $errorContent = file_exists($logFilePath) ? file_get_contents($logFilePath) : '';
-                        $statusCode = self::getStatusCode($logFilePath);
-                        $taskLog = new TaskLog(['task_id' => $taskId, 'status_code' => $statusCode, 'content' => $errorContent]);
+                        $taskLog = self::createTaskLog($task, $logFilePath);
 
-                        if (!TaskLog::whereTaskId($taskId)->exists()) {
-                            $taskLog->save();
+                        if (TaskLog::whereTaskId($task->id)->exists()) {
+                            self::updateTaskLog($task, $logFilePath);
                         } else {
-                            $taskLog = TaskLog::whereTaskId($taskId)->first();
-                            $isSameError = Str::before($taskLog->content, "\n") === Str::before($errorContent, "\n");
-                            if ($taskLog->task_id === $taskId && $taskLog->status_code === $statusCode && $isSameError) {
-                                if (file_exists($logFilePath)) unlink($logFilePath);
-                                return;
-                            }
-                            $taskLog->status_code = $statusCode;
-                            $taskLog->content = $errorContent;
                             $taskLog->save();
                         }
-                        if (file_exists($logFilePath)) unlink($logFilePath);
+                        self::deleteTaskLogFile($logFilePath);
                     } catch (\Exception $e) {
                         \Log::error('Could not store failed scheduler task log: ' . $e->getMessage());
                     }
                 });
-
-            // close and remove log file after scheduling
-            if (file_exists($logFilePath)) fclose($logFile);
         }
+    }
+
+    /**
+     * @param SchedulerTask $task
+     * @param $logFilePath
+     * @return string
+     */
+    public static function createTaskLog(SchedulerTask $task, $logFilePath)
+    {
+        $taskId = $task->id;
+        $errorContent = file_exists($logFilePath) ? file_get_contents($logFilePath) : '';
+        $statusCode = self::getStatusCode($logFilePath);
+        return new TaskLog(['task_id' => $taskId, 'status_code' => $statusCode, 'content' => $errorContent]);
     }
 
     /**
      * Get status code from error log
      *
      * @param string $fileName
-     * @return float|int|string
+     * @return float|int
      */
-    private static function getStatusCode($fileName)
+    public static function getStatusCode($fileName)
     {
         $lines = file($fileName);
         foreach ($lines as $lineNumber => $line) {
@@ -98,16 +89,52 @@ class TaskScheduler
                 return abs((int)filter_var($line, FILTER_SANITIZE_NUMBER_INT));
             }
         }
-        return '500';
+        return 500;
     }
 
     /**
-     * @param $dirPath
-     * @return array
+     * @return string
      */
-    private static function createTaskLogFile($dirPath)
+    public static function createTaskLogFile()
     {
+        $dirPath = storage_path() . DIRECTORY_SEPARATOR . 'logs' . DIRECTORY_SEPARATOR . 'tmp';
+
+        if (!file_exists($dirPath)) mkdir($dirPath, 0770, true);
+
         putenv('TMPDIR='.$dirPath);
-        return tmpfile();
+        if ($logFile = tmpfile()) {
+            return stream_get_meta_data($logFile)['uri'];
+        } else {
+            return $dirPath . DIRECTORY_SEPARATOR . uniqid('schedule', true) . '.log';
+        }
+    }
+
+    /**
+     * @param $task
+     * @param $logFilePath
+     * @return void
+     */
+    public static function updateTaskLog($task, $logFilePath)
+    {
+        $errorContent = file_exists($logFilePath) ? file_get_contents($logFilePath) : '';
+        $statusCode = self::getStatusCode($logFilePath);
+        $taskLog = TaskLog::whereTaskId($task->id)->first();
+        $isSameError = Str::before($taskLog->content, "\n") === Str::before($errorContent, "\n");
+        if ($taskLog->task_id === $task->id && $taskLog->status_code === $statusCode && $isSameError) {
+            self::deleteTaskLogFile($logFilePath);
+            return;
+        }
+        $taskLog->status_code = $statusCode;
+        $taskLog->content = $errorContent;
+        $taskLog->save();
+    }
+
+    /**
+     * @param $logFilePath
+     * @return void
+     */
+    public static function deleteTaskLogFile($logFilePath)
+    {
+        if (file_exists($logFilePath)) unlink($logFilePath);
     }
 }
