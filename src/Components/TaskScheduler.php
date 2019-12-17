@@ -47,10 +47,11 @@ class TaskScheduler
                 ->cron('*/' . $task->frequency . ' * * * *')
                 ->withoutOverlapping()
                 ->sendOutputTo($logFilePath)
-                ->onSuccess(function () use ($task) {
+                ->onSuccess(function () use ($task, $logFilePath) {
                     if (TaskLog::whereTaskId($task->id)->exists()) {
                         TaskLog::whereTaskId($task->id)->first()->delete();
                     }
+                    if (file_exists($logFilePath)) unlink($logFilePath);
                 })
                 ->onFailure(function () use ($task, $logFilePath) {
                     try {
