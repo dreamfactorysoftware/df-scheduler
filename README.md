@@ -12,3 +12,7 @@ This is an add on to the DreamFactory Core library and requires the [df-core rep
 
 This package will try to add it automatically, but it is your responsibility to make sure that system has the cron job. 
 Otherwise, tasks would not be scheduled.
+
+**!Note**: This package will try to change your directory for temporary files 
+([sys_get_temp_dir](https://www.php.net/manual/en/function.sys-get-temp-dir.php)) 
+to `your/instance/path/storage/logs/tmp` using TMPDIR env variable.

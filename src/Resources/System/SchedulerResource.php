@@ -1,4 +1,6 @@
-<?php namespace DreamFactory\Core\Scheduler\Resources\System;
+<?php
+
+namespace DreamFactory\Core\Scheduler\Resources\System;
 
 use DreamFactory\Core\Scheduler\Models\SchedulerTask;
 use DreamFactory\Core\System\Resources\BaseSystemResource;
