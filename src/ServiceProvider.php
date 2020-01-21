@@ -29,8 +29,9 @@ class ServiceProvider extends \Illuminate\Support\ServiceProvider
             $output = shell_exec('crontab -l');
 
             if (!Str::contains($output, $cron)) {
-                file_put_contents(storage_path() . '/crontab.txt', $output . ' ' . $cron . PHP_EOL);
-                exec('crontab ' . storage_path() . '/crontab.txt');
+                file_put_contents(public_path() . '/crontab.txt', $output . ' ' . $cron . PHP_EOL);
+                exec('crontab ' . public_path() . '/crontab.txt');
+                exec('rm ' . public_path() . '/crontab.txt');
             }
 
         } catch (\Exception $e) {
