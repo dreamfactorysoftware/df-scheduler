@@ -37,8 +37,6 @@ class ServiceProvider extends \Illuminate\Support\ServiceProvider
             Log::error($e->getMessage());
         }
 
-//        todo: check cron service status in middleware $output = shell_exec('service cron status');
-
         $this->commands([
             ScheduleListCommand::class,
         ]);
