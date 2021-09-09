@@ -3,6 +3,7 @@
 namespace DreamFactory\Core\Scheduler\Components;
 
 use DreamFactory\Core\Enums\VerbsMask;
+use DreamFactory\Core\Exceptions\InternalServerErrorException;
 use DreamFactory\Core\Scheduler\Models\SchedulerTask;
 use DreamFactory\Core\Scheduler\Models\TaskLog;
 use Illuminate\Console\Scheduling\Schedule;
@@ -33,6 +34,18 @@ class TaskScheduler
         if ($task->is_active) {
 
             $logFilePath = self::createTaskLogFile();
+            exec('pgrep cron', $output, $status);
+            if (count($output) === 0) {
+                $message = 'Make sure your cron daemon is running!';
+                $taskLog = self::createTaskLog($task, $logFilePath, 500, $message);
+                if (TaskLog::whereTaskId($task->id)->exists()) {
+                    self::updateTaskLog($task, $logFilePath,500, $message);
+                } else {
+                    $taskLog->save();
+                }
+                self::deleteTaskLogFile($logFilePath);
+                return;
+            }
 
             app(Schedule::class)
                 ->command('df:request \'' . $data . '\' ' . $commandOptions)
@@ -65,14 +78,15 @@ class TaskScheduler
     /**
      * @param SchedulerTask $task
      * @param $logFilePath
-     * @return string
+     * @param $message
+     * @return TaskLog
      */
-    public static function createTaskLog(SchedulerTask $task, $logFilePath)
+    public static function createTaskLog(SchedulerTask $task, $logFilePath, $statusCode = null, $message = null)
     {
         $taskId = $task->id;
         $errorContent = file_exists($logFilePath) ? file_get_contents($logFilePath) : '';
-        $statusCode = self::getStatusCode($logFilePath);
-        return new TaskLog(['task_id' => $taskId, 'status_code' => $statusCode, 'content' => $errorContent]);
+        $statusCode = $statusCode ?: self::getStatusCode($logFilePath);
+        return new TaskLog(['task_id' => $taskId, 'status_code' => $statusCode, 'content' => !empty($message) ? $message : $errorContent]);
     }
 
     /**
@@ -101,8 +115,9 @@ class TaskScheduler
 
         if (!file_exists($dirPath)) mkdir($dirPath, 0770, true);
 
-        putenv('TMPDIR='.$dirPath);
-        if ($logFile = tmpfile()) {
+        putenv('TMPDIR=' . $dirPath);
+        $logFile = tmpfile();
+        if ($logFile) {
             return stream_get_meta_data($logFile)['uri'];
         } else {
             return $dirPath . DIRECTORY_SEPARATOR . uniqid('schedule', true) . '.log';
@@ -114,10 +129,10 @@ class TaskScheduler
      * @param $logFilePath
      * @return void
      */
-    public static function updateTaskLog($task, $logFilePath)
+    public static function updateTaskLog($task, $logFilePath, $statusCode = null, $message = null)
     {
         $errorContent = file_exists($logFilePath) ? file_get_contents($logFilePath) : '';
-        $statusCode = self::getStatusCode($logFilePath);
+        $statusCode = $statusCode ?: self::getStatusCode($logFilePath);
         $taskLog = TaskLog::whereTaskId($task->id)->first();
         $isSameError = Str::before($taskLog->content, "\n") === Str::before($errorContent, "\n");
         if ($taskLog->task_id === $task->id && $taskLog->status_code === $statusCode && $isSameError) {
@@ -125,7 +140,7 @@ class TaskScheduler
             return;
         }
         $taskLog->status_code = $statusCode;
-        $taskLog->content = $errorContent;
+        $taskLog->content = !empty($message) ? $message : $errorContent;
         $taskLog->save();
     }
 
