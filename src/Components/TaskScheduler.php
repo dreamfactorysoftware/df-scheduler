@@ -3,6 +3,7 @@
 namespace DreamFactory\Core\Scheduler\Components;
 
 use DreamFactory\Core\Enums\VerbsMask;
+use DreamFactory\Core\Utility\Session;
 use DreamFactory\Core\Exceptions\InternalServerErrorException;
 use DreamFactory\Core\Scheduler\Models\SchedulerTask;
 use DreamFactory\Core\Scheduler\Models\TaskLog;
@@ -19,6 +20,10 @@ class TaskScheduler
      */
     public static function schedule(SchedulerTask $task)
     {
+        $taskCreatedBy = $task->created_by_id;
+        $sessionUser = \Auth::loginUsingId($taskCreatedBy);
+        Session::setUserInfoWithJWT($sessionUser);
+    
         if (empty($task->payload)) {
             $data = '';
         } else {
