@@ -20,6 +20,8 @@ class TaskScheduler
      */
     public static function schedule(SchedulerTask $task)
     {
+        // Cron jobs do not have a Dreamfactory user by default. As a result in order to make internal api calls
+        // (i.e call other services), we need to give it one. We will use the same user that created the scheduled task.
         $taskCreatedBy = $task->created_by_id;
         $sessionUser = \Auth::loginUsingId($taskCreatedBy);
         Session::setUserInfoWithJWT($sessionUser);
