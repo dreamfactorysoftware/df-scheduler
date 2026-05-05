@@ -86,7 +86,7 @@ class ScheduleListCommand extends Command
     protected static function previousRunDate($expression)
     {
         return Carbon::instance(
-            CronExpression::factory($expression)->getPreviousRunDate()
+            (new CronExpression($expression))->getPreviousRunDate()
         );
     }
 }
