@@ -22,19 +22,15 @@ class ServiceProvider extends \Illuminate\Support\ServiceProvider
         // add migrations
         $this->loadMigrationsFrom(__DIR__ . '/../database/migrations');
 
-        // Add cron job
-        $projectPath = base_path() . '/';
-        $cron = "* * * * * cd " . $projectPath . " && php artisan schedule:run >> /dev/null 2>&1";
-        try {
-            $output = shell_exec('crontab -l');
-
-            if (!Str::contains($output, $cron)) {
-                file_put_contents(storage_path() . '/crontab.txt', $output . ' ' . $cron . PHP_EOL);
-                exec('crontab ' . storage_path() . '/crontab.txt');
-            }
-
-        } catch (\Exception $e) {
-            Log::error($e->getMessage());
+        // Install the host crontab entry. This used to run on every boot
+        // (every HTTP request, every queue tick), which:
+        //  1. raced multiple workers writing the same crontab.txt,
+        //  2. ran shell_exec/exec on every request — DoS amplifier,
+        //  3. interpolated storage_path() into a shell command unquoted.
+        // We now only run from the CLI, behind an exclusive file lock,
+        // and pass the path with escapeshellarg.
+        if ($this->app->runningInConsole() && !$this->app->runningUnitTests()) {
+            $this->installCrontabEntry();
         }
 
         $this->commands([
@@ -44,6 +40,42 @@ class ServiceProvider extends \Illuminate\Support\ServiceProvider
         $this->app->booted(function () {
             $this->scheduleTasks();
         });
+    }
+
+    protected function installCrontabEntry(): void
+    {
+        $projectPath = base_path() . '/';
+        $cron = "* * * * * cd " . $projectPath . " && php artisan schedule:run >> /dev/null 2>&1";
+        $crontabFile = storage_path() . '/crontab.txt';
+        $lockFile = storage_path() . '/crontab.lock';
+
+        $lock = @fopen($lockFile, 'c');
+        if ($lock === false) {
+            Log::warning('df-scheduler: could not open crontab lock file at ' . $lockFile);
+            return;
+        }
+
+        try {
+            if (!flock($lock, LOCK_EX | LOCK_NB)) {
+                // Another process is already installing the cron entry.
+                return;
+            }
+
+            $output = shell_exec('crontab -l 2>/dev/null') ?? '';
+
+            if (!Str::contains($output, $cron)) {
+                if (file_put_contents($crontabFile, $output . PHP_EOL . $cron . PHP_EOL) === false) {
+                    Log::error('df-scheduler: failed to write ' . $crontabFile);
+                    return;
+                }
+                exec('crontab ' . escapeshellarg($crontabFile));
+            }
+        } catch (\Exception $e) {
+            Log::error($e->getMessage());
+        } finally {
+            flock($lock, LOCK_UN);
+            fclose($lock);
+        }
     }
 
     public function register()
