@@ -100,6 +100,40 @@ class ScheduleTest extends TestCase
     }
 
     /**
+     * A user_id without an app_id is a malformed record (the UI hides the user
+     * field until an app is picked, but the REST API will happily accept it).
+     * It must not reach the command line as a bare --user-id.
+     */
+    public function testOrphanedUserIdIsNotScheduled()
+    {
+        $orphan = new SchedulerTask([
+            'name' => 'runas_orphan_task', 'payload' => '', 'verb_mask' => 1, 'service_id' => 1,
+            'component' => 'test', 'is_active' => 1, 'frequency' => 1,
+            'app_id' => null, 'user_id' => 1,
+        ]);
+        $orphan->save();
+        TaskScheduler::schedule($orphan);
+        $events = app(Schedule::class)->events();
+        $command = end($events)->command;
+        $this->assertStringNotContainsString('--user-id=', $command);
+        $this->assertStringNotContainsString('--app-id=', $command);
+    }
+
+    /**
+     * And if such a record does reach RunAsSession (direct df:scheduled-request
+     * invocation, or a task created before this guard landed), it falls back to
+     * the legacy session-less path rather than building a half-formed session.
+     */
+    public function testOrphanedUserIdLeavesSessionless()
+    {
+        Session::flush();
+        RunAsSession::apply(null, 1);
+        $this->assertNull(Session::get('app.id'));
+        $this->assertNull(Session::get('user.id'));
+        $this->assertNull(Session::get('role.id'));
+    }
+
+    /**
      * The heart of Option B: applying a run-as identity establishes a real
      * session, so lookups resolve and a role (with role.services for RBAC) is
      * loaded — exactly what the session-less scheduler lacks today.

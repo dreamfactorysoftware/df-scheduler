@@ -14,7 +14,9 @@ use Log;
  *   - the script's internal platform.api calls are permission-checked against a
  *     real role, because the run-as role's role.services are loaded.
  *
- * With no identity this is a no-op, preserving the legacy session-less behavior.
+ * The identity is anchored on the app: an app_id is required, and a user_id
+ * alone is ignored. With no app_id this is a no-op, preserving the legacy
+ * session-less behavior.
  */
 class RunAsSession
 {
@@ -27,7 +29,21 @@ class RunAsSession
         $appId = !empty($appId) ? (int)$appId : null;
         $userId = !empty($userId) ? (int)$userId : null;
 
-        if (empty($appId) && empty($userId)) {
+        // A user without an app is not a state the feature supports: the app is
+        // what supplies the API key and the default role. Accepting a bare
+        // user_id would build a half-formed session (no app.id, no api_key) that
+        // nothing else in the platform produces. Drop it rather than honor it —
+        // a task with only user_id set is a malformed record, so fall through to
+        // the legacy session-less path it would have taken before this feature.
+        if (empty($appId) && !empty($userId)) {
+            Log::warning(
+                'Scheduled task has user_id=' . $userId . ' but no app_id; ignoring the ' .
+                'run-as identity and running session-less. Set an app_id to enable run-as.'
+            );
+            $userId = null;
+        }
+
+        if (empty($appId)) {
             return;
         }
 
@@ -36,11 +52,9 @@ class RunAsSession
 
         // Make the app's key available so {app.api_key} and api-key-dependent
         // logic resolve just like an authenticated request.
-        if (!empty($appId)) {
-            $apiKey = App::getCachedInfo($appId, 'api_key');
-            if (!empty($apiKey)) {
-                Session::setApiKey($apiKey);
-            }
+        $apiKey = App::getCachedInfo($appId, 'api_key');
+        if (!empty($apiKey)) {
+            Session::setApiKey($apiKey);
         }
 
         if (empty(Session::get('role.id'))) {

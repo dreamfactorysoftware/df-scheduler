@@ -32,12 +32,13 @@ class TaskScheduler
 
         // Optional run-as identity: when set, the task runs under a real session
         // (role + lookups) instead of the legacy session-less context. Ints only,
-        // so no shell-escaping concerns.
+        // so no shell-escaping concerns. The user is scoped to the app, so a
+        // user_id is only meaningful alongside an app_id.
         if (!empty($task->app_id)) {
             $commandOptions .= ' --app-id=' . (int)$task->app_id;
-        }
-        if (!empty($task->user_id)) {
-            $commandOptions .= ' --user-id=' . (int)$task->user_id;
+            if (!empty($task->user_id)) {
+                $commandOptions .= ' --user-id=' . (int)$task->user_id;
+            }
         }
 
         // Use the scheduler to schedule the task at its desired frequency in minutes
