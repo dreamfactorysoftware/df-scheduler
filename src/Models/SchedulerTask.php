@@ -18,6 +18,8 @@ class SchedulerTask extends BaseSystemModel
         'description',
         'is_active',
         'service_id',
+        'app_id',
+        'user_id',
         'component',
         'verb_mask',
         'frequency',
@@ -33,7 +35,9 @@ class SchedulerTask extends BaseSystemModel
         'id'             => 'integer',
         'is_active'      => 'boolean',
         'verb_mask'      => 'integer',
-        'service_id'     => 'integer'
+        'service_id'     => 'integer',
+        'app_id'         => 'integer',
+        'user_id'        => 'integer'
     ];
 
     /**

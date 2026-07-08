@@ -3,6 +3,7 @@
 namespace DreamFactory\Core\Scheduler;
 
 use DreamFactory\Core\Scheduler\Commands\ScheduleListCommand;
+use DreamFactory\Core\Scheduler\Commands\ScheduledRequest;
 use DreamFactory\Core\Scheduler\Components\TaskScheduler;
 use DreamFactory\Core\Scheduler\Models\SchedulerTask;
 use DreamFactory\Core\Enums\LicenseLevel;
@@ -35,6 +36,7 @@ class ServiceProvider extends \Illuminate\Support\ServiceProvider
 
         $this->commands([
             ScheduleListCommand::class,
+            ScheduledRequest::class,
         ]);
 
         $this->app->booted(function () {

@@ -30,6 +30,16 @@ class TaskScheduler
         $component = $task->component;
         $commandOptions = '--format=JSON --verb=' . $verb . ' --service=' . $serviceName . ' --resource=' . $component;
 
+        // Optional run-as identity: when set, the task runs under a real session
+        // (role + lookups) instead of the legacy session-less context. Ints only,
+        // so no shell-escaping concerns.
+        if (!empty($task->app_id)) {
+            $commandOptions .= ' --app-id=' . (int)$task->app_id;
+        }
+        if (!empty($task->user_id)) {
+            $commandOptions .= ' --user-id=' . (int)$task->user_id;
+        }
+
         // Use the scheduler to schedule the task at its desired frequency in minutes
         if ($task->is_active) {
 
@@ -48,7 +58,7 @@ class TaskScheduler
             }
 
             app(Schedule::class)
-                ->command('df:request \'' . $data . '\' ' . $commandOptions)
+                ->command('df:scheduled-request \'' . $data . '\' ' . $commandOptions)
                 ->cron('*/' . $task->frequency . ' * * * *')
                 ->withoutOverlapping()
                 ->sendOutputTo($logFilePath)
