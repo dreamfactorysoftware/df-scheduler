@@ -151,6 +151,16 @@ class TaskRunHistoryTest extends TestCase
         $this->assertLessThanOrEqual(TaskRun::OUTPUT_LIMIT, strlen($run->refresh()->output));
     }
 
+    public function testInvalidUtf8OutputIsSanitised()
+    {
+        $run = TaskScheduler::startRun($this->task);
+        TaskScheduler::finishRun($run, $this->logFile("bad \xC3\x28 bytes statusCode 200"), true);
+
+        $run = $run->fresh();
+        $this->assertNotNull($run->finished_at);
+        $this->assertNotFalse(json_encode($run->toArray()));
+    }
+
     public function testScheduleWiresRunHooks()
     {
         // schedule() bails early when no cron daemon runs in the test container

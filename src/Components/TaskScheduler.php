@@ -130,7 +130,7 @@ class TaskScheduler
             $run->finished_at = now();
             $run->status_code = strpos($output, 'statusCode') !== false
                 ? self::getStatusCode($logFilePath) : ($ok ? 200 : 500);
-            $run->output = mb_strcut($output, 0, TaskRun::OUTPUT_LIMIT);
+            $run->output = mb_strcut(mb_scrub($output, 'UTF-8'), 0, TaskRun::OUTPUT_LIMIT);
             $run->save();
 
             $keep = TaskRun::whereTaskId($run->task_id)->orderByDesc('id')
