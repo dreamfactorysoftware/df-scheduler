@@ -9,7 +9,7 @@ use DreamFactory\Core\Models\BaseSystemModel;
  */
 class TaskRun extends BaseSystemModel
 {
-    // ponytail: count cap, make it configurable if a customer asks
+    // Runs kept per task. Make it configurable if a customer needs more.
     const KEEP_PER_TASK = 100;
 
     const OUTPUT_LIMIT = 16384;

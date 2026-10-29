@@ -70,7 +70,7 @@ class SchedulerTask extends BaseSystemModel
             return $status;
         }
 
-        // ponytail: 3 small indexed queries per task per GET, batch if lists reach hundreds
+        // 3 small indexed queries per task per GET; batch them if lists reach hundreds.
         $runs = TaskRun::whereTaskId($this->id)->orderByDesc('id');
         $pick = function ($q) {
             $r = $q->first(['id', 'started_at', 'finished_at', 'status_code']);
