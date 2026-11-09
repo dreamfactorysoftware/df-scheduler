@@ -126,10 +126,12 @@ class TaskScheduler
             return;
         }
         try {
-            $output = file_exists($logFilePath) ? file_get_contents($logFilePath) : '';
+            // Only the head is read. A task can print hundreds of MB, and this runs inside
+            // schedule:run after every run: loading it all can exhaust memory there, which
+            // leaves the overlap lock held for a day and skips the tasks still due.
+            $output = self::readOutputHead($logFilePath);
             $run->finished_at = now();
-            $run->status_code = strpos($output, 'statusCode') !== false
-                ? self::getStatusCode($logFilePath) : ($ok ? 200 : 500);
+            $run->status_code = self::statusCodeFromOutput($output) ?? ($ok ? 200 : 500);
             $run->output = mb_strcut(mb_scrub($output, 'UTF-8'), 0, TaskRun::OUTPUT_LIMIT);
             $run->save();
 
@@ -139,6 +141,40 @@ class TaskScheduler
         } catch (\Exception $e) {
             \Log::error('Could not finish scheduler task run: ' . $e->getMessage());
         }
+    }
+
+    /**
+     * First TaskRun::OUTPUT_LIMIT bytes of a run's output file; '' when there is none.
+     *
+     * @param string $logFilePath
+     * @return string
+     */
+    protected static function readOutputHead($logFilePath)
+    {
+        if (!is_file($logFilePath)) {
+            return '';
+        }
+        $head = file_get_contents($logFilePath, false, null, 0, TaskRun::OUTPUT_LIMIT);
+
+        return $head === false ? '' : $head;
+    }
+
+    /**
+     * Status code printed in captured output, by the same rule as getStatusCode().
+     * The response dump puts it in the first lines. Null when the output has none.
+     *
+     * @param string $output
+     * @return int|null
+     */
+    protected static function statusCodeFromOutput($output)
+    {
+        foreach (explode("\n", $output) as $line) {
+            if (strpos($line, 'statusCode') !== false) {
+                return abs((int)filter_var($line, FILTER_SANITIZE_NUMBER_INT));
+            }
+        }
+
+        return null;
     }
 
     /**

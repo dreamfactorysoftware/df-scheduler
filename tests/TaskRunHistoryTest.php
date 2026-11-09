@@ -151,6 +151,48 @@ class TaskRunHistoryTest extends TestCase
         $this->assertLessThanOrEqual(TaskRun::OUTPUT_LIMIT, strlen($run->refresh()->output));
     }
 
+    public function testLargeOutputIsReadBounded()
+    {
+        // 24 MB of output after the status line. finishRun runs inside schedule:run
+        // after every run, so it must not load the whole file.
+        $file = $this->logFile("Exception Object\n(\n    [statusCode:protected] => 201\n");
+        $h = fopen($file, 'a');
+        $chunk = str_repeat('x', 1024 * 1024 - 1) . "\n";
+        for ($i = 0; $i < 24; $i++) {
+            fwrite($h, $chunk);
+        }
+        fclose($h);
+        unset($chunk);
+
+        $run = TaskScheduler::startRun($this->task);
+        gc_collect_cycles();
+        memory_reset_peak_usage();
+        $before = memory_get_usage();
+        TaskScheduler::finishRun($run, $file, true);
+        $grown = memory_get_peak_usage() - $before;
+
+        $this->assertLessThan(8 * 1024 * 1024, $grown, 'finishRun loaded the whole output file');
+        $run->refresh();
+        $this->assertEquals(201, $run->status_code);
+        $this->assertEquals(TaskRun::OUTPUT_LIMIT, strlen($run->output));
+    }
+
+    public function testStatusFallsBackToExitCodeWithoutStatusLine()
+    {
+        $ok = TaskScheduler::startRun($this->task);
+        TaskScheduler::finishRun($ok, $this->logFile('Request complete!'), true);
+        $this->assertEquals(200, $ok->refresh()->status_code);
+
+        $failed = TaskScheduler::startRun($this->task);
+        TaskScheduler::finishRun($failed, $this->logFile('boom'), false);
+        $this->assertEquals(500, $failed->refresh()->status_code);
+
+        $missing = TaskScheduler::startRun($this->task);
+        TaskScheduler::finishRun($missing, sys_get_temp_dir() . '/no-such-run-output', false);
+        $this->assertEquals(500, $missing->refresh()->status_code);
+        $this->assertSame('', $missing->output);
+    }
+
     public function testInvalidUtf8OutputIsSanitised()
     {
         $run = TaskScheduler::startRun($this->task);
