@@ -207,4 +207,21 @@ class TaskRunHistoryTest extends TestCase
         $this->assertArrayHasKey('run_status', $content);
         $this->assertCount(1, $content['task_run_by_task_id']);
     }
+
+    public function testApiCannotWriteRunHistory()
+    {
+        $other = $this->makeTask();
+        $run = TaskScheduler::startRun($other);
+        TaskScheduler::finishRun($run, $this->statusFile(404), true);
+
+        $rs = $this->makeRequest(Verbs::PATCH, 'scheduler/' . $this->task->id, [], ['task_run_by_task_id' => [
+            ['started_at' => '2026-01-01 00:00:00', 'finished_at' => '2026-01-01 00:00:01', 'status_code' => 200],
+            ['id' => $run->id, 'status_code' => 200],
+        ]]);
+
+        $this->assertEquals(200, $rs->getStatusCode());
+        $this->assertEquals(0, TaskRun::whereTaskId($this->task->id)->count());
+        $this->assertEquals(404, TaskRun::find($run->id)->status_code);
+        $other->delete();
+    }
 }

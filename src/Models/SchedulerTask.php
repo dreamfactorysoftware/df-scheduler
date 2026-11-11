@@ -47,6 +47,21 @@ class SchedulerTask extends BaseSystemModel
      */
     protected $appends = ['verb', 'run_status'];
 
+    /** Run history is written only by the scheduler; ignore it in API payloads. */
+    public static function create(array $attributes = [])
+    {
+        unset($attributes['task_run_by_task_id']);
+
+        return parent::create($attributes);
+    }
+
+    public function update(array $attributes = [], array $options = [])
+    {
+        unset($attributes['task_run_by_task_id']);
+
+        return parent::update($attributes, $options);
+    }
+
     /**
      * Get verb.
      *
