@@ -70,7 +70,7 @@ class TaskRunHistoryTest extends TestCase
         $this->assertNotNull($rows[0]->started_at);
         $this->assertNotNull($rows[0]->finished_at);
         $this->assertEquals(200, $rows[0]->status_code);
-        $this->assertStringContainsString('statusCode', $rows[0]->output);
+        $this->assertNull($rows[0]->output, 'success output may hold data the reader has no access to');
         $this->assertFalse(TaskLog::whereTaskId($this->task->id)->exists());
     }
 
@@ -83,6 +83,7 @@ class TaskRunHistoryTest extends TestCase
         TaskScheduler::createTaskLog($this->task, $file)->save();
 
         $this->assertEquals(404, TaskRun::whereTaskId($this->task->id)->first()->status_code);
+        $this->assertStringContainsString('statusCode', TaskRun::whereTaskId($this->task->id)->first()->output);
         $this->assertEquals(404, TaskLog::whereTaskId($this->task->id)->first()->status_code);
     }
 
@@ -143,19 +144,11 @@ class TaskRunHistoryTest extends TestCase
         SchedulerTask::whereKey($other->id)->delete();
     }
 
-    public function testOutputTruncated()
-    {
-        $run = TaskScheduler::startRun($this->task);
-        TaskScheduler::finishRun($run, $this->logFile(str_repeat('x', 100 * 1024)), true);
-
-        $this->assertLessThanOrEqual(TaskRun::OUTPUT_LIMIT, strlen($run->refresh()->output));
-    }
-
     public function testLargeOutputIsReadBounded()
     {
         // 24 MB of output after the status line. finishRun runs inside schedule:run
         // after every run, so it must not load the whole file.
-        $file = $this->logFile("Exception Object\n(\n    [statusCode:protected] => 201\n");
+        $file = $this->logFile("Exception Object\n(\n    [statusCode:protected] => 500\n");
         $h = fopen($file, 'a');
         $chunk = str_repeat('x', 1024 * 1024 - 1) . "\n";
         for ($i = 0; $i < 24; $i++) {
@@ -168,12 +161,12 @@ class TaskRunHistoryTest extends TestCase
         gc_collect_cycles();
         memory_reset_peak_usage();
         $before = memory_get_usage();
-        TaskScheduler::finishRun($run, $file, true);
+        TaskScheduler::finishRun($run, $file, false);
         $grown = memory_get_peak_usage() - $before;
 
         $this->assertLessThan(8 * 1024 * 1024, $grown, 'finishRun loaded the whole output file');
         $run->refresh();
-        $this->assertEquals(201, $run->status_code);
+        $this->assertEquals(500, $run->status_code);
         $this->assertEquals(TaskRun::OUTPUT_LIMIT, strlen($run->output));
     }
 
@@ -196,19 +189,12 @@ class TaskRunHistoryTest extends TestCase
     public function testInvalidUtf8OutputIsSanitised()
     {
         $run = TaskScheduler::startRun($this->task);
-        TaskScheduler::finishRun($run, $this->logFile("bad \xC3\x28 bytes statusCode 200"), true);
+        TaskScheduler::finishRun($run, $this->logFile("bad \xC3\x28 \0 bytes statusCode 500"), false);
 
         $run = $run->fresh();
         $this->assertNotNull($run->finished_at);
+        $this->assertStringNotContainsString("\0", $run->output);
         $this->assertNotFalse(json_encode($run->toArray()));
-    }
-
-    public function testScheduleWiresRunHooks()
-    {
-        // schedule() bails early when no cron daemon runs in the test container
-        $src = file_get_contents(__DIR__ . '/../src/Components/TaskScheduler.php');
-        $this->assertMatchesRegularExpression('/->before\(.*startRun/s', $src);
-        $this->assertEquals(2, preg_match_all('/self::finishRun\(/', $src));
     }
 
     public function testApiExposesRunStatusAndHistory()

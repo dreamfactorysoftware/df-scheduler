@@ -132,7 +132,11 @@ class TaskScheduler
             $output = self::readOutputHead($logFilePath);
             $run->finished_at = now();
             $run->status_code = self::statusCodeFromOutput($output) ?? ($ok ? 200 : 500);
-            $run->output = mb_strcut(mb_scrub($output, 'UTF-8'), 0, TaskRun::OUTPUT_LIMIT);
+            // Only failures keep output: a success can carry data the task read with
+            // full privileges, and system/scheduler is readable by non-admin roles.
+            // NUL is valid UTF-8 but PostgreSQL text rejects it.
+            $run->output = $run->status_code < 300 ? null
+                : mb_strcut(str_replace("\0", '', mb_scrub($output, 'UTF-8')), 0, TaskRun::OUTPUT_LIMIT);
             $run->save();
 
             $keep = TaskRun::whereTaskId($run->task_id)->orderByDesc('id')
