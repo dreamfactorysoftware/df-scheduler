@@ -45,7 +45,22 @@ class SchedulerTask extends BaseSystemModel
      *
      * @var array
      */
-    protected $appends = ['verb'];
+    protected $appends = ['verb', 'run_status'];
+
+    /** Run history is written only by the scheduler; ignore it in API payloads. */
+    public static function create(array $attributes = [])
+    {
+        unset($attributes['task_run_by_task_id']);
+
+        return parent::create($attributes);
+    }
+
+    public function update(array $attributes = [], array $options = [])
+    {
+        unset($attributes['task_run_by_task_id']);
+
+        return parent::update($attributes, $options);
+    }
 
     /**
      * Get verb.
@@ -56,5 +71,35 @@ class SchedulerTask extends BaseSystemModel
     public function getVerbAttribute()
     {
         return VerbsMask::toString($this->attributes['verb_mask']);
+    }
+
+    /**
+     * Running flag plus last run / success / failure (no output, keeps lists small).
+     *
+     * @return array
+     */
+    public function getRunStatusAttribute()
+    {
+        $status = ['is_running' => false, 'last_run' => null, 'last_success' => null, 'last_failure' => null];
+        if (empty($this->id)) {
+            return $status;
+        }
+
+        // 3 small indexed queries per task per GET; batch them if lists reach hundreds.
+        $runs = TaskRun::whereTaskId($this->id)->orderByDesc('id');
+        $pick = function ($q) {
+            $r = $q->first(['id', 'started_at', 'finished_at', 'status_code']);
+            return $r ? $r->toArray() : null;
+        };
+        $finished = (clone $runs)->whereNotNull('finished_at');
+
+        $status['last_run'] = $pick(clone $runs);
+        $status['last_success'] = $pick((clone $finished)->where('status_code', '<', 300));
+        $status['last_failure'] = $pick((clone $finished)->where('status_code', '>=', 300));
+        // 1440 min = withoutOverlapping's default expiry, so a killed process stops reading as running
+        $status['is_running'] = $status['last_run'] && empty($status['last_run']['finished_at'])
+            && TaskRun::whereKey($status['last_run']['id'])->where('started_at', '>', now()->subMinutes(1440))->exists();
+
+        return $status;
     }
 }

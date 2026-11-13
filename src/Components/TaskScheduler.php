@@ -6,6 +6,7 @@ use DreamFactory\Core\Enums\VerbsMask;
 use DreamFactory\Core\Exceptions\InternalServerErrorException;
 use DreamFactory\Core\Scheduler\Models\SchedulerTask;
 use DreamFactory\Core\Scheduler\Models\TaskLog;
+use DreamFactory\Core\Scheduler\Models\TaskRun;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Support\Str;
 
@@ -58,18 +59,25 @@ class TaskScheduler
                 return;
             }
 
+            $state = new \stdClass();
+
             app(Schedule::class)
                 ->command('df:scheduled-request \'' . $data . '\' ' . $commandOptions)
                 ->cron('*/' . $task->frequency . ' * * * *')
                 ->withoutOverlapping()
                 ->sendOutputTo($logFilePath)
-                ->onSuccess(function () use ($task, $logFilePath) {
+                ->before(function () use ($task, $state) {
+                    $state->run = self::startRun($task);
+                })
+                ->onSuccess(function () use ($task, $logFilePath, $state) {
+                    self::finishRun($state->run ?? null, $logFilePath, true);
                     if (TaskLog::whereTaskId($task->id)->exists()) {
                         TaskLog::whereTaskId($task->id)->first()->delete();
                     }
                     self::deleteTaskLogFile($logFilePath);
                 })
-                ->onFailure(function () use ($task, $logFilePath) {
+                ->onFailure(function () use ($task, $logFilePath, $state) {
+                    self::finishRun($state->run ?? null, $logFilePath, false);
                     try {
                         $taskLog = self::createTaskLog($task, $logFilePath);
 
@@ -84,6 +92,93 @@ class TaskScheduler
                     }
                 });
         }
+    }
+
+    /**
+     * Open a run row; an older still-open row means its process died.
+     *
+     * @param SchedulerTask $task
+     * @return TaskRun|null
+     */
+    public static function startRun(SchedulerTask $task)
+    {
+        try {
+            TaskRun::whereTaskId($task->id)->whereNull('finished_at')
+                ->update(['finished_at' => now(), 'status_code' => 500, 'output' => 'Run did not finish']);
+
+            return TaskRun::create(['task_id' => $task->id, 'started_at' => now()]);
+        } catch (\Exception $e) {
+            \Log::error('Could not store scheduler task run: ' . $e->getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * Close a run row and prune old history. Never throws: history must not break the run.
+     *
+     * @param TaskRun|null $run
+     * @param string $logFilePath
+     * @param bool $ok
+     */
+    public static function finishRun($run, $logFilePath, $ok)
+    {
+        if (!$run) {
+            return;
+        }
+        try {
+            // Only the head is read. A task can print hundreds of MB, and this runs inside
+            // schedule:run after every run: loading it all can exhaust memory there, which
+            // leaves the overlap lock held for a day and skips the tasks still due.
+            $output = self::readOutputHead($logFilePath);
+            $run->finished_at = now();
+            $run->status_code = self::statusCodeFromOutput($output) ?? ($ok ? 200 : 500);
+            // Only failures keep output: a success can carry data the task read with
+            // full privileges, and system/scheduler is readable by non-admin roles.
+            // NUL is valid UTF-8 but PostgreSQL text rejects it.
+            $run->output = $run->status_code < 300 ? null
+                : mb_strcut(str_replace("\0", '', mb_scrub($output, 'UTF-8')), 0, TaskRun::OUTPUT_LIMIT);
+            $run->save();
+
+            $keep = TaskRun::whereTaskId($run->task_id)->orderByDesc('id')
+                ->limit(TaskRun::KEEP_PER_TASK)->pluck('id');
+            TaskRun::whereTaskId($run->task_id)->whereNotIn('id', $keep)->delete();
+        } catch (\Exception $e) {
+            \Log::error('Could not finish scheduler task run: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * First TaskRun::OUTPUT_LIMIT bytes of a run's output file; '' when there is none.
+     *
+     * @param string $logFilePath
+     * @return string
+     */
+    protected static function readOutputHead($logFilePath)
+    {
+        if (!is_file($logFilePath)) {
+            return '';
+        }
+        $head = file_get_contents($logFilePath, false, null, 0, TaskRun::OUTPUT_LIMIT);
+
+        return $head === false ? '' : $head;
+    }
+
+    /**
+     * Status code printed in captured output, by the same rule as getStatusCode().
+     * The response dump puts it in the first lines. Null when the output has none.
+     *
+     * @param string $output
+     * @return int|null
+     */
+    protected static function statusCodeFromOutput($output)
+    {
+        foreach (explode("\n", $output) as $line) {
+            if (strpos($line, 'statusCode') !== false) {
+                return abs((int)filter_var($line, FILTER_SANITIZE_NUMBER_INT));
+            }
+        }
+
+        return null;
     }
 
     /**

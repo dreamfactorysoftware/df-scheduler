@@ -8,6 +8,7 @@ use DreamFactory\Core\Scheduler\Components\TaskScheduler;
 use DreamFactory\Core\Scheduler\Models\SchedulerTask;
 use DreamFactory\Core\Enums\LicenseLevel;
 use DreamFactory\Core\Scheduler\Models\TaskLog;
+use DreamFactory\Core\Scheduler\Models\TaskRun;
 use DreamFactory\Core\Scheduler\Resources\System\SchedulerResource;
 use DreamFactory\Core\Models\SystemTableModelMapper;
 use DreamFactory\Core\System\Components\SystemResourceManager;
@@ -99,6 +100,7 @@ class ServiceProvider extends \Illuminate\Support\ServiceProvider
         // Add our table model mapping
         $this->app->resolving('df.system.table_model_map', function (SystemTableModelMapper $df) {
             $df->addMapping('task_log', TaskLog::class);
+            $df->addMapping('task_run', TaskRun::class);
         });
     }
 
