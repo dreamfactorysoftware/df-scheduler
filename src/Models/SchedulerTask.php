@@ -47,6 +47,9 @@ class SchedulerTask extends BaseSystemModel
      */
     protected $appends = ['verb', 'run_status'];
 
+    /** Shortest time, in minutes, a task's overlap lock is held. */
+    const OVERLAP_LOCK_MIN_MINUTES = 10;
+
     /** Run history is written only by the scheduler; ignore it in API payloads. */
     public static function create(array $attributes = [])
     {
@@ -96,10 +99,29 @@ class SchedulerTask extends BaseSystemModel
         $status['last_run'] = $pick(clone $runs);
         $status['last_success'] = $pick((clone $finished)->where('status_code', '<', 300));
         $status['last_failure'] = $pick((clone $finished)->where('status_code', '>=', 300));
-        // 1440 min = withoutOverlapping's default expiry, so a killed process stops reading as running
+        // Same window as the overlap lock, so a run whose process died stops reading as running
         $status['is_running'] = $status['last_run'] && empty($status['last_run']['finished_at'])
-            && TaskRun::whereKey($status['last_run']['id'])->where('started_at', '>', now()->subMinutes(1440))->exists();
+            && TaskRun::whereKey($status['last_run']['id'])
+                ->where('started_at', '>', now()->subMinutes($this->overlapLockMinutes()))->exists();
 
         return $status;
+    }
+
+    /**
+     * Minutes the scheduler's overlap lock is held for this task: two run intervals,
+     * and at least OVERLAP_LOCK_MIN_MINUTES. While it is held the next run waits.
+     * A run that never finished (its process stopped) holds it no longer than this.
+     *
+     * @return int
+     */
+    public function overlapLockMinutes()
+    {
+        // A partial select (?fields=) can leave frequency out; use the stored value then.
+        $frequency = array_key_exists('frequency', $this->attributes) ? $this->frequency
+            : ($this->exists ? static::whereKey($this->getKey())->value('frequency') : null);
+        // frequency is the minute step in '*/N * * * *'; N of 60 or more fires once an hour.
+        $interval = min(max((int)$frequency, 1), 60);
+
+        return max(static::OVERLAP_LOCK_MIN_MINUTES, 2 * $interval);
     }
 }

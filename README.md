@@ -21,3 +21,12 @@ Otherwise, tasks would not be scheduled.
 **!Note**: This package will try to change your directory for temporary files 
 ([sys_get_temp_dir](https://www.php.net/manual/en/function.sys-get-temp-dir.php)) 
 to `your/instance/path/storage/logs/tmp` using TMPDIR env variable.
+
+## Overlapping runs
+
+A task does not start while its previous run is still going. During a run the scheduler holds a lock for the
+task in the cache. The lock is released when the run ends, and expires on its own after two run intervals of
+the task, or 10 minutes if that is longer. For example, the lock of a task that runs every minute expires after
+10 minutes, and that of a task that runs every 30 minutes after an hour. If a run is cut short, for example by
+a container restart, the task runs again once its lock has expired. A run that lasts longer than this can
+overlap with the next one.
