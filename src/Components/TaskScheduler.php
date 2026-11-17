@@ -46,8 +46,7 @@ class TaskScheduler
         if ($task->is_active) {
 
             $logFilePath = self::createTaskLogFile();
-            exec('pgrep cron', $output, $status);
-            if (count($output) === 0) {
+            if (!static::cronIsRunning()) {
                 $message = 'Make sure your cron daemon is running!';
                 $taskLog = self::createTaskLog($task, $logFilePath, 500, $message);
                 if (TaskLog::whereTaskId($task->id)->exists()) {
@@ -64,7 +63,7 @@ class TaskScheduler
             app(Schedule::class)
                 ->command('df:scheduled-request \'' . $data . '\' ' . $commandOptions)
                 ->cron('*/' . $task->frequency . ' * * * *')
-                ->withoutOverlapping()
+                ->withoutOverlapping($task->overlapLockMinutes())
                 ->sendOutputTo($logFilePath)
                 ->before(function () use ($task, $state) {
                     $state->run = self::startRun($task);
@@ -92,6 +91,18 @@ class TaskScheduler
                     }
                 });
         }
+    }
+
+    /**
+     * Whether the cron daemon that drives schedule:run is up.
+     *
+     * @return bool
+     */
+    protected static function cronIsRunning()
+    {
+        exec('pgrep cron', $output);
+
+        return count($output) > 0;
     }
 
     /**
@@ -128,7 +139,7 @@ class TaskScheduler
         try {
             // Only the head is read. A task can print hundreds of MB, and this runs inside
             // schedule:run after every run: loading it all can exhaust memory there, which
-            // leaves the overlap lock held for a day and skips the tasks still due.
+            // leaves the overlap lock held until it expires and skips the tasks still due.
             $output = self::readOutputHead($logFilePath);
             $run->finished_at = now();
             $run->status_code = self::statusCodeFromOutput($output) ?? ($ok ? 200 : 500);
