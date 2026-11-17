@@ -116,8 +116,11 @@ class SchedulerTask extends BaseSystemModel
      */
     public function overlapLockMinutes()
     {
+        // A partial select (?fields=) can leave frequency out; use the stored value then.
+        $frequency = array_key_exists('frequency', $this->attributes) ? $this->frequency
+            : ($this->exists ? static::whereKey($this->getKey())->value('frequency') : null);
         // frequency is the minute step in '*/N * * * *'; N of 60 or more fires once an hour.
-        $interval = min(max((int)$this->frequency, 1), 60);
+        $interval = min(max((int)$frequency, 1), 60);
 
         return max(static::OVERLAP_LOCK_MIN_MINUTES, 2 * $interval);
     }

@@ -94,6 +94,11 @@ class OverlapLockTest extends TestCase
 
         $this->assertFalse($everyMinute->run_status['is_running'], 'open run is older than the lock window');
         $this->assertTrue($halfHourly->run_status['is_running'], 'open run is inside the lock window');
+
+        // as loaded for ?fields=id: frequency is not selected
+        $partial = SchedulerTask::select(['id'])->find($halfHourly->id);
+        $this->assertSame(60, $partial->overlapLockMinutes());
+        $this->assertTrue($partial->run_status['is_running']);
     }
 }
 
