@@ -11,6 +11,8 @@ use DreamFactory\Core\Testing\TestCase;
 class FakeCrontabProvider extends ServiceProvider
 {
     public static array $crontabs = [];
+    /** OS user that owns storage/crontab.txt */
+    public static ?string $crontabFileOwner = null;
     public string $user = 'root';
 
     public function install(): void
@@ -31,8 +33,18 @@ class FakeCrontabProvider extends ServiceProvider
     protected function writeCrontab(string $crontabFile): bool
     {
         static::$crontabs[$this->user] = file_get_contents($crontabFile);
+        static::$crontabFileOwner = $this->user;
 
         return true;
+    }
+
+    protected function previousCrontabUser(string $crontabFile, string $cron): ?string
+    {
+        if (!is_file($crontabFile) || !str_contains((string)file_get_contents($crontabFile), $cron)) {
+            return null;
+        }
+
+        return static::$crontabFileOwner;
     }
 }
 
@@ -49,6 +61,7 @@ class CrontabEntryTest extends TestCase
         mkdir($this->storage);
         $this->app->useStoragePath($this->storage);
         FakeCrontabProvider::$crontabs = [];
+        FakeCrontabProvider::$crontabFileOwner = null;
         config(['df-scheduler.install_cron' => true, 'df-scheduler.cron_user' => '']);
     }
 
@@ -182,5 +195,82 @@ class CrontabEntryTest extends TestCase
 
         $this->assertStringContainsString('/usr/local/bin/backup', FakeCrontabProvider::$crontabs['root']);
         $this->assertSame(1, $this->entries('root'));
+    }
+
+    /**
+     * An install from before the owner record existed: root added the entry (and wrote
+     * crontab.txt), then the web user is the first to run artisan.
+     */
+    public function testWebUserRunningFirstAfterUpgradeLeavesItsCrontabAlone(): void
+    {
+        FakeCrontabProvider::$crontabs['root'] = PHP_EOL . $this->entryLine() . PHP_EOL;
+        file_put_contents($this->storage . '/crontab.txt', FakeCrontabProvider::$crontabs['root']);
+        FakeCrontabProvider::$crontabFileOwner = 'root';
+
+        $this->runAs('www-data');
+        $this->runAs('www-data');
+        $this->runAs('root');
+        $this->runAs('www-data');
+
+        $this->assertSame(1, $this->entries('root'));
+        $this->assertSame(0, $this->entries('www-data'));
+        $this->assertSame('root', $this->owner());
+    }
+
+    public function testRootAddsTheEntryWhenThePreviousUserNoLongerHasIt(): void
+    {
+        file_put_contents($this->storage . '/crontab.txt', PHP_EOL . $this->entryLine() . PHP_EOL);
+        FakeCrontabProvider::$crontabFileOwner = 'www-data';
+
+        $this->runAs('root');
+        $this->runAs('www-data');
+
+        $this->assertSame(1, $this->entries('root'));
+        $this->assertSame(0, $this->entries('www-data'));
+        $this->assertSame('root', $this->owner());
+    }
+
+    public function testConfiguredUserAfterAnotherOwnerAddsItsEntryAndTakesTheRecord(): void
+    {
+        $this->runAs('root');
+        config(['df-scheduler.cron_user' => 'www-data']);
+
+        $this->runAs('www-data');
+
+        $this->assertSame(1, $this->entries('www-data'));
+        $this->assertSame('www-data', $this->owner());
+    }
+
+    public function testOwnerRecordCreatedByRootCanBeUpdatedLater(): void
+    {
+        $this->runAs('root');
+
+        $this->assertSame('664', substr(sprintf('%o', fileperms($this->storage . '/crontab.owner.json')), -3));
+    }
+
+    public function testWebUserDoesNotAddTheEntryWhenThePreviousUserIsUnknown(): void
+    {
+        touch($this->storage . '/crontab.lock');
+
+        $this->runAs('www-data');
+        $this->assertSame(0, $this->entries('www-data'));
+        $this->assertNull($this->owner());
+
+        $this->runAs('root');
+        $this->runAs('www-data');
+        $this->assertSame(1, $this->entries('root'));
+        $this->assertSame(0, $this->entries('www-data'));
+        $this->assertSame('root', $this->owner());
+    }
+
+    public function testWebUserWithItsOwnEntryIsRecordedWhenThePreviousUserIsUnknown(): void
+    {
+        touch($this->storage . '/crontab.lock');
+        FakeCrontabProvider::$crontabs['www-data'] = PHP_EOL . $this->entryLine() . PHP_EOL;
+
+        $this->runAs('www-data');
+
+        $this->assertSame(1, $this->entries('www-data'));
+        $this->assertSame('www-data', $this->owner());
     }
 }

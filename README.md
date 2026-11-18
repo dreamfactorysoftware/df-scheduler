@@ -20,8 +20,10 @@ Otherwise, tasks would not be scheduled.
 
 The entry should exist once per host. Each OS user has its own crontab, so the entry is added for one user only:
 when an artisan command runs, the first user that has or adds the entry on the host is recorded in
-`storage/crontab.owner.json`, and artisan runs as other users leave their crontabs alone. (If the recorded
-user's entry has been removed, artisan run as `root` adds it again for `root`.) Two settings change this:
+`storage/crontab.owner.json` (one record per host name), and artisan runs as other users leave their crontabs
+alone. On an install that has no record yet, the owner of `storage/crontab.txt`, the file the entry is written
+from, is taken as the user that added it; if that cannot be told either, only `root` adds the entry. (If the
+recorded user's entry has been removed, artisan run as `root` adds it again for `root`.) Two settings change this:
 
 | Variable | Default | Effect |
 |---|---|---|
