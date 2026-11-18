@@ -73,7 +73,30 @@ class SchedulerTask extends BaseSystemModel
      */
     public function getVerbAttribute()
     {
+        if (!isset($this->attributes['verb_mask'])) {
+            return null;
+        }
+
         return VerbsMask::toString($this->attributes['verb_mask']);
+    }
+
+    /**
+     * Appended values are computed from other columns. When a partial select (?fields=)
+     * leaves those columns out, leave the appended value out of the output as well.
+     *
+     * @return array
+     */
+    protected function getArrayableAppends()
+    {
+        $appends = parent::getArrayableAppends();
+        $sources = ['verb' => 'verb_mask', 'run_status' => $this->getKeyName()];
+        foreach ($sources as $append => $column) {
+            if (!array_key_exists($column, $this->attributes)) {
+                unset($appends[$append]);
+            }
+        }
+
+        return $appends;
     }
 
     /**
