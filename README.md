@@ -18,6 +18,19 @@ DreamFactory is a secure, self-hosted enterprise data access platform that provi
 This package will try to add it automatically, but it is your responsibility to make sure that system has the cron job. 
 Otherwise, tasks would not be scheduled.
 
+The entry should exist once per host. Each OS user has its own crontab, so the entry is added for one user only:
+when an artisan command runs, the first user that has or adds the entry on the host is recorded in
+`storage/crontab.owner.json`, and artisan runs as other users leave their crontabs alone. (If the recorded
+user's entry has been removed, artisan run as `root` adds it again for `root`.) Two settings change this:
+
+| Variable | Default | Effect |
+|---|---|---|
+| `DF_SCHEDULER_CRON_USER` | empty | Add the entry only when artisan runs as this OS user, for example `www-data`. |
+| `DF_SCHEDULER_INSTALL_CRON` | `true` | Set to `false` to manage the cron entry yourself. |
+
+When you change the user, remove the entry from the crontab of the previous user (`crontab -u <user> -e`),
+otherwise `schedule:run` starts twice a minute and tasks can run twice.
+
 **!Note**: This package will try to change your directory for temporary files 
 ([sys_get_temp_dir](https://www.php.net/manual/en/function.sys-get-temp-dir.php)) 
 to `your/instance/path/storage/logs/tmp` using TMPDIR env variable.

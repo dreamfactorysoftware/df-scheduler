@@ -24,13 +24,8 @@ class ServiceProvider extends \Illuminate\Support\ServiceProvider
         // add migrations
         $this->loadMigrationsFrom(__DIR__ . '/../database/migrations');
 
-        // Install the host crontab entry. This used to run on every boot
-        // (every HTTP request, every queue tick), which:
-        //  1. raced multiple workers writing the same crontab.txt,
-        //  2. ran shell_exec/exec on every request — DoS amplifier,
-        //  3. interpolated storage_path() into a shell command unquoted.
-        // We now only run from the CLI, behind an exclusive file lock,
-        // and pass the path with escapeshellarg.
+        // Install the host crontab entry for schedule:run. This only runs from the CLI,
+        // behind a file lock, and for a single OS user per host (see installCrontabEntry).
         if ($this->app->runningInConsole() && !$this->app->runningUnitTests()) {
             $this->installCrontabEntry();
         }
@@ -45,12 +40,39 @@ class ServiceProvider extends \Illuminate\Support\ServiceProvider
         });
     }
 
+    /**
+     * Add the schedule:run entry to the crontab of one OS user on this host.
+     *
+     * Artisan may be run by several OS users (root during an image build, the web user
+     * from a shell, and so on). Each user has its own crontab, so adding the entry for
+     * every one of them would start schedule:run more than once a minute. Instead:
+     *  - DF_SCHEDULER_INSTALL_CRON=false turns the automatic entry off.
+     *  - DF_SCHEDULER_CRON_USER=<user> adds it only when artisan runs as that user.
+     *  - Otherwise the first user that has, or adds, the entry on this host is recorded
+     *    in storage/crontab.owner.json and other users leave their crontab alone.
+     */
     protected function installCrontabEntry(): void
     {
+        if (!filter_var(config('df-scheduler.install_cron', true), FILTER_VALIDATE_BOOLEAN)) {
+            return;
+        }
+
+        $user = $this->currentOsUser();
+        if (empty($user)) {
+            return;
+        }
+
+        $configuredUser = trim((string)config('df-scheduler.cron_user', ''));
+        if ($configuredUser !== '' && $configuredUser !== $user) {
+            return;
+        }
+
         $projectPath = base_path() . '/';
         $cron = "* * * * * cd " . $projectPath . " && php artisan schedule:run >> /dev/null 2>&1";
         $crontabFile = storage_path() . '/crontab.txt';
         $lockFile = storage_path() . '/crontab.lock';
+        $ownerFile = storage_path() . '/crontab.owner.json';
+        $host = (string)gethostname();
 
         $lock = @fopen($lockFile, 'c');
         if ($lock === false) {
@@ -64,14 +86,38 @@ class ServiceProvider extends \Illuminate\Support\ServiceProvider
                 return;
             }
 
-            $output = shell_exec('crontab -l 2>/dev/null') ?? '';
+            $owners = $this->readCrontabOwners($ownerFile);
+            $owner = $owners[$host] ?? null;
+            $output = $this->readCrontab();
+            $hasEntry = Str::contains($output, $cron);
 
-            if (!Str::contains($output, $cron)) {
+            if (!$hasEntry && $configuredUser === '' && !empty($owner) && $owner !== $user) {
+                // Another user on this host runs schedule:run already. root can check that
+                // the entry is still there and take over if it was removed.
+                if ('root' !== $user || Str::contains($this->readCrontab($owner), $cron)) {
+                    return;
+                }
+            }
+
+            if (!$hasEntry) {
                 if (file_put_contents($crontabFile, $output . PHP_EOL . $cron . PHP_EOL) === false) {
                     Log::error('df-scheduler: failed to write ' . $crontabFile);
                     return;
                 }
-                exec('crontab ' . escapeshellarg($crontabFile));
+                if (!$this->writeCrontab($crontabFile)) {
+                    Log::warning('df-scheduler: could not add the schedule:run entry to the crontab of ' . $user);
+                    return;
+                }
+            }
+
+            if ($hasEntry && !empty($owner) && $owner !== $user) {
+                Log::warning('df-scheduler: the crontabs of both ' . $owner . ' and ' . $user .
+                    ' contain the schedule:run entry; remove one of them so tasks start once a minute');
+            } elseif ($owner !== $user) {
+                $owners[$host] = $user;
+                if (false === @file_put_contents($ownerFile, json_encode($owners, JSON_PRETTY_PRINT) . PHP_EOL)) {
+                    Log::warning('df-scheduler: failed to write ' . $ownerFile);
+                }
             }
         } catch (\Exception $e) {
             Log::error($e->getMessage());
@@ -81,8 +127,59 @@ class ServiceProvider extends \Illuminate\Support\ServiceProvider
         }
     }
 
+    /**
+     * Name of the OS user this process runs as, or null if it cannot be determined.
+     */
+    protected function currentOsUser(): ?string
+    {
+        if (function_exists('posix_geteuid') && function_exists('posix_getpwuid')) {
+            $info = posix_getpwuid(posix_geteuid());
+            if (!empty($info['name'])) {
+                return $info['name'];
+            }
+        }
+        $name = trim((string)shell_exec('id -un 2>/dev/null'));
+
+        return '' === $name ? null : $name;
+    }
+
+    /**
+     * @return array<string, string> host name => OS user that owns the schedule:run entry
+     */
+    protected function readCrontabOwners(string $file): array
+    {
+        if (!is_file($file)) {
+            return [];
+        }
+        $owners = json_decode((string)@file_get_contents($file), true);
+
+        return is_array($owners) ? array_filter($owners, 'is_string') : [];
+    }
+
+    /**
+     * Crontab of the current OS user, or of $user (reading another user's needs root).
+     */
+    protected function readCrontab(?string $user = null): string
+    {
+        $command = 'crontab ' . (null === $user ? '' : '-u ' . escapeshellarg($user) . ' ') . '-l 2>/dev/null';
+
+        return (string)shell_exec($command);
+    }
+
+    /**
+     * Replace the current OS user's crontab with the contents of $crontabFile.
+     */
+    protected function writeCrontab(string $crontabFile): bool
+    {
+        exec('crontab ' . escapeshellarg($crontabFile), $ignored, $status);
+
+        return 0 === $status;
+    }
+
     public function register()
     {
+        $this->mergeConfigFrom(__DIR__ . '/../config/df-scheduler.php', 'df-scheduler');
+
         $this->app->resolving('df.system.resource', function (SystemResourceManager $df) {
             $df->addType(
                 new SystemResourceType([
